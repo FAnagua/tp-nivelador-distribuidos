@@ -2,6 +2,7 @@ package client
 
 import (
 	"net"
+	"strings"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -19,11 +20,15 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	AgencyId   string
+	InputFile  string
+	OutputFile string
 }
 
 type Client struct {
-	conn   net.Conn
-	config ClientConfig
+	conn      net.Conn
+	config    ClientConfig
+	csvIter   *CsvIterator
+	csvWriter *CsvWriter
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -33,7 +38,19 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{conn: conn, config: config}
+	csvIter, err := NewCsvIterator(config.InputFile)
+	if err != nil {
+		logger.Warn("open-csv-file", logger.Fail)
+		return nil, err
+	}
+
+	csvWriter, err := NewCsvWriter(config.OutputFile)
+	if err != nil {
+		logger.Warn("open-output-file", logger.Fail)
+		return nil, err
+	}
+
+	client := &Client{conn: conn, config: config, csvIter: csvIter, csvWriter: csvWriter}
 	return client, nil
 }
 
@@ -61,12 +78,22 @@ func connectToServer(host, port string) (net.Conn, error) {
 func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
 	defer client.conn.Close()
+	defer client.csvIter.Close()
+	defer client.csvWriter.Close()
 
-	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
+	var record []string
+	var messageId string
+
+	for client.csvIter.Next() {
+		record = client.csvIter.Record()
+		messageId = record[0]
+
 		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
 		logger.Info(mainAction, logger.InProgress, messageArgs...)
 
-		clientMessage := client.config.AgencyId
+		logger.Info("read-csv-record", logger.InProgress, "record", record)
+
+		clientMessage := record[0] + "," + record[1] + "," + record[2] + "," + record[3] + "," + record[4]
 
 		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
 			logger.Error("send-message", logger.Fail, messageArgs...)
@@ -81,6 +108,13 @@ func (client *Client) Run() error {
 
 		if string(responseBuffer) == clientMessage {
 			logger.Error("check-response", logger.Fail, messageArgs...)
+			return err
+		}
+
+		responseBuffer = responseBuffer[:len(clientMessage)]
+
+		if err := client.csvWriter.Write(strings.Split(string(responseBuffer), ",")); err != nil {
+			logger.Error("write-csv-record", logger.Fail, messageArgs...)
 			return err
 		}
 
