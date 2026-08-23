@@ -13,6 +13,8 @@ def generar_docker_compose(nombre_archivo: str, n_clientes: int):
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=server
       - SERVER_PORT=5678
+    ports:
+      - "5678:5678"
 """
 
     for i in range(0, n_clientes):
