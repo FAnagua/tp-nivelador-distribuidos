@@ -30,6 +30,11 @@ def generar_docker_compose(nombre_archivo: str, n_clientes: int):
       - AGENCY_ID={i}
       - SERVER_HOST=server
       - SERVER_PORT=5678
+      - INPUT_FILE=/input/input-{i}.csv
+      - OUTPUT_FILE=/output/output-{i}.csv
+    volumes:
+      - ./input:/input
+      - ./output:/output
 """
     
 
