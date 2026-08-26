@@ -3,6 +3,9 @@ package client
 import (
 	"encoding/csv"
 	"os"
+	"strconv"
+
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/bet"
 )
 
 type CsvWriter struct {
@@ -24,7 +27,14 @@ func NewCsvWriter(filePath string) (*CsvWriter, error) {
 	}, nil
 }
 
-func (w *CsvWriter) Write(record []string) error {
+func (w *CsvWriter) Write(bet *bet.Bet) error {
+	record := []string{
+		bet.FirstName,
+		bet.LastName,
+		strconv.Itoa(bet.Document),
+		bet.BirthDate,
+		strconv.Itoa(bet.BetNumber),
+	}
 	err := w.writer.Write(record)
 	if err != nil {
 		return err
