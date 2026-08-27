@@ -4,8 +4,10 @@ import (
 	"net"
 	"time"
 
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
+
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/bet"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
-	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
 
 const CONNECTION_ATTEMPTS_MAX = 3
@@ -19,11 +21,16 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	AgencyId   string
+	InputFile  string
+	OutputFile string
 }
 
 type Client struct {
-	conn   net.Conn
-	config ClientConfig
+	conn      net.Conn
+	config    ClientConfig
+	csvIter   *CsvIterator
+	csvWriter *CsvWriter
+	protocol  protocol.Protocol
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -33,7 +40,19 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{conn: conn, config: config}
+	csvIter, err := NewCsvIterator(config.InputFile)
+	if err != nil {
+		logger.Warn("open-csv-file", logger.Fail)
+		return nil, err
+	}
+
+	csvWriter, err := NewCsvWriter(config.OutputFile)
+	if err != nil {
+		logger.Warn("open-output-file", logger.Fail)
+		return nil, err
+	}
+
+	client := &Client{conn: conn, config: config, csvIter: csvIter, csvWriter: csvWriter}
 	return client, nil
 }
 
@@ -61,32 +80,64 @@ func connectToServer(host, port string) (net.Conn, error) {
 func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
 	defer client.conn.Close()
+	defer client.csvIter.Close()
+	defer client.csvWriter.Close()
 
-	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
-		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
-		logger.Info(mainAction, logger.InProgress, messageArgs...)
+	var record []string
 
-		clientMessage := client.config.AgencyId
+	client.protocol.SendAgencyId(client.conn, client.config.AgencyId)
 
-		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
-			logger.Error("send-message", logger.Fail, messageArgs...)
-			return err
-		}
+	for client.csvIter.Next() {
+		record = client.csvIter.Record()
 
-		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
+		bet, err := bet.NewBet(client.config.AgencyId, record)
 		if err != nil {
-			logger.Error("recv-response", logger.Fail, messageArgs...)
-			return err
+			logger.Warn("parse-csv-record", logger.Fail, "record", record)
+			continue
 		}
 
-		if string(responseBuffer) != clientMessage {
-			logger.Error("check-response", logger.Fail, messageArgs...)
-			return err
+		logger.Info("send-bet", logger.InProgress, "record", record)
+
+		err = client.protocol.SendBet(client.conn, &bet)
+		if err != nil {
+			logger.Warn("send-bet", logger.Fail, "record", record)
+			continue
 		}
 
-		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
+		cmd, err := client.protocol.ReadCommand(client.conn)
+		if err != nil {
+			logger.Warn("read-command", logger.Fail)
+			continue
+		}
+		if cmd == protocol.CMD_SERVER_ACK {
+			logger.Info("received-ack", logger.Success)
+		}
+
 	}
+
+	client.protocol.SendCommandResults(client.conn)
+
+	cmd, err := client.protocol.ReadCommand(client.conn)
+	if err != nil {
+		logger.Warn("read-command", logger.Fail)
+		return err
+	}
+	if cmd == protocol.CMD_SERVER_RESULTS {
+		results, err := client.protocol.ReadResults(client.conn)
+		if err != nil {
+			logger.Warn("read-results", logger.Fail)
+			return err
+		}
+
+		for _, bet := range results {
+			logger.Info("received-result", logger.Success, "bet", bet)
+			client.csvWriter.Write(bet)
+		}
+	}
+
+	client.protocol.SendCommandFinished(client.conn)
 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
+	//time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
 
 	return nil
 }

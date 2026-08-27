@@ -1,6 +1,7 @@
 import socket
 import logger
-import safe_socket
+import protocol
+import lottery
 
 _ECHO_SERVER_MESSAGE_SIZE = 1024
 
@@ -9,26 +10,61 @@ class Server:
     def __init__(self, server_host: str, server_port: int) -> None:
         self.server_host = server_host
         self.server_port = server_port
+        self.protocol = protocol.Protocol()
+        self.lottery = lottery.Lottery("bets.csv")
 
     def _handle_client(self, client_socket):
         action = "handle-client"
         message_amount = 0
+        agency_id = None
+        finish = False
+
         try:
             logger.info(action, logger.LogResult.in_progress)
-            while True:
-                client_message = safe_socket.recv_all(
-                    client_socket, _ECHO_SERVER_MESSAGE_SIZE
-                )
-                if not client_message:
+            while not finish:
+                cmd = self.protocol.readByte(client_socket)
+                if cmd == protocol.CMD_CLIENT_AGENCY_ID:
+                    agency_id = self.protocol.readByte(client_socket)
                     logger.info(
-                        action,
+                        "received-agency-id",
                         logger.LogResult.success,
-                        "messages-amount",
-                        message_amount,
+                        "agency-id",
+                        agency_id,
                     )
-                    return
+                    #finish = True
+                elif cmd == protocol.CMD_CLIENT_BET:
+                    bet = self.protocol.readBet(client_socket, agency_id)
+                    logger.info(
+                        "received-bet",
+                        logger.LogResult.success,
+                        "bet",
+                        str(bet),
+                    )
+                    self.protocol.sendAck(client_socket)
+                    self.lottery.store_bets([bet])
+                elif cmd == protocol.CMD_CLIENT_FINISHED:
+                    logger.info(
+                        "received-finished",
+                        logger.LogResult.success,
+                        "agency-id",
+                        agency_id,
+                    )
+                    finish = True
+                elif cmd == protocol.CMD_CLIENT_RESULTS:
+                    bets = self.lottery.load_bets()
+                    bets_winning = []
+                    for bet in bets:
+                        if self.lottery.has_won(bet) and bet.agency_id == agency_id:
+                            logger.info(
+                                "bet-winner",
+                                logger.LogResult.success,
+                                "bet",
+                                str(bet),
+                            )
+                            bets_winning.append(bet)
+                    self.protocol.sendResults(client_socket, bets_winning)
+                        
                 message_amount += 1
-                safe_socket.send_all(client_socket, client_message)
         except Exception as e:
             logger.error(
                 action, logger.LogResult.fail, "messages-amount", message_amount
