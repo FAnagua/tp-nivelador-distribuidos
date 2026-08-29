@@ -177,11 +177,16 @@ func (p *Protocol) SendAgencyId(socket io.Writer, id string) error {
 	return err
 }
 
-func (p *Protocol) SendBet(socket io.Writer, bet *bet.Bet) error {
+func (p *Protocol) SendBets(socket io.Writer, bets *[]bet.Bet) error {
 	var data []byte
 	cmd := p.serializeByte(CMD_CLIENT_BET)
-	betData := p.serializeBet(bet)
-	data = append(cmd, betData...)
+	numBets := p.serialize2Bytes(uint16(len(*bets)))
+	data = append(data, cmd...)
+	data = append(data, numBets...)
+	for _, bet := range *bets {
+		betData := p.serializeBet(&bet)
+		data = append(data, betData...)
+	}
 	err := safe_socket.SendAll(socket, data)
 	return err
 }

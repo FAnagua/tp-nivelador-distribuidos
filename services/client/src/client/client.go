@@ -23,6 +23,7 @@ type ClientConfig struct {
 	AgencyId   string
 	InputFile  string
 	OutputFile string
+	BatchSize  int
 }
 
 type Client struct {
@@ -83,24 +84,32 @@ func (client *Client) Run() error {
 	defer client.csvIter.Close()
 	defer client.csvWriter.Close()
 
-	var record []string
+	existRecord := client.csvIter.Next()
 
 	client.protocol.SendAgencyId(client.conn, client.config.AgencyId)
 
-	for client.csvIter.Next() {
-		record = client.csvIter.Record()
+	for existRecord {
 
-		bet, err := bet.NewBet(client.config.AgencyId, record)
-		if err != nil {
-			logger.Warn("parse-csv-record", logger.Fail, "record", record)
-			continue
+		batch := 0
+		var bets []bet.Bet
+
+		for batch < client.config.BatchSize && existRecord {
+			record := client.csvIter.Record()
+			bet, err := bet.NewBet(client.config.AgencyId, record)
+			if err != nil {
+				logger.Warn("parse-csv-record", logger.Fail, "record", record)
+				continue
+			}
+			bets = append(bets, bet)
+			existRecord = client.csvIter.Next()
+			batch++
 		}
 
-		logger.Info("send-bet", logger.InProgress, "record", record)
+		logger.Info("send-bets", logger.InProgress)
 
-		err = client.protocol.SendBet(client.conn, &bet)
+		err := client.protocol.SendBets(client.conn, &bets)
 		if err != nil {
-			logger.Warn("send-bet", logger.Fail, "record", record)
+			logger.Warn("send-bets", logger.Fail)
 			continue
 		}
 

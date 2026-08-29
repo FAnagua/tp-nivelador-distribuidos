@@ -62,6 +62,14 @@ class Protocol:
         number = self.read4Bytes(socket)
         return lottery.Bet(agency_id, first_name, last_name, document, birth_date, number)
 
+    def readBets(self, socket: socket.socket, agency_id: int) -> list[lottery.Bet]:
+        num_bets = self.read2Bytes(socket)
+        bets = []
+        for _ in range(num_bets):
+            bet = self.readBet(socket, agency_id)
+            bets.append(bet)
+        return bets
+
     def sendAck(self, socket: socket.socket) -> None:
         data = self.serializeByte(CMD_SERVER_ACK)
         safe_socket.send_all(socket, data)

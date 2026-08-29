@@ -32,6 +32,7 @@ def generar_docker_compose(nombre_archivo: str, n_clientes: int):
       - SERVER_PORT=5678
       - INPUT_FILE=/input/input-{i}.csv
       - OUTPUT_FILE=/output/output-{i}.csv
+      - BATCH_SIZE=30
     volumes:
       - ./input:/input
       - ./output:/output

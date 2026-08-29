@@ -33,15 +33,15 @@ class Server:
                     )
                     #finish = True
                 elif cmd == protocol.CMD_CLIENT_BET:
-                    bet = self.protocol.readBet(client_socket, agency_id)
+                    bets = self.protocol.readBets(client_socket, agency_id)
                     logger.info(
-                        "received-bet",
+                        "received-bets",
                         logger.LogResult.success,
-                        "bet",
-                        str(bet),
+                        "bets",
+                        str(bets),
                     )
                     self.protocol.sendAck(client_socket)
-                    self.lottery.store_bets([bet])
+                    self.lottery.store_bets(bets)
                 elif cmd == protocol.CMD_CLIENT_FINISHED:
                     logger.info(
                         "received-finished",
