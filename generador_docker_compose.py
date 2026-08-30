@@ -13,6 +13,7 @@ def generar_docker_compose(nombre_archivo: str, n_clientes: int):
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=server
       - SERVER_PORT=5678
+      - AGENCY_QUORUM_MIN={n_clientes}
     ports:
       - "5678:5678"
 """

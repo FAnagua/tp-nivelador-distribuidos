@@ -2,16 +2,21 @@ import socket
 import logger
 import protocol
 import lottery
+import threading
+import lottery_monitor
 
 _ECHO_SERVER_MESSAGE_SIZE = 1024
 
 
 class Server:
-    def __init__(self, server_host: str, server_port: int) -> None:
+    def __init__(self, server_host: str, server_port: int, agency_quorum_min: int) -> None:
         self.server_host = server_host
         self.server_port = server_port
+        self.agency_quorum_min = agency_quorum_min
         self.protocol = protocol.Protocol()
         self.lottery = lottery.Lottery("bets.csv")
+        self.threads : list[threading.Thread] = []
+        self.lottery_monitor = lottery_monitor.Monitor(self.lottery, self.agency_quorum_min)
 
     def _handle_client(self, client_socket):
         action = "handle-client"
@@ -41,7 +46,7 @@ class Server:
                         str(bets),
                     )
                     self.protocol.sendAck(client_socket)
-                    self.lottery.store_bets(bets)
+                    self.lottery_monitor.store_bets(bets)
                 elif cmd == protocol.CMD_CLIENT_FINISHED:
                     logger.info(
                         "received-finished",
@@ -51,6 +56,7 @@ class Server:
                     )
                     finish = True
                 elif cmd == protocol.CMD_CLIENT_RESULTS:
+                    self.lottery_monitor.wait_for_all_agencies()
                     bets = self.lottery.load_bets()
                     bets_winning = []
                     for bet in bets:
@@ -85,4 +91,14 @@ class Server:
                     raise e
                 logger.info(action, logger.LogResult.success)
 
-                self._handle_client(client_socket)
+                thread = threading.Thread(target=self._handle_client, args=(client_socket,))
+                self.threads.append(thread)
+
+
+                thread.start()
+        
+        self.wait_for_threads()
+
+    def wait_for_threads(self):
+        for thread in self.threads:
+            thread.join()
