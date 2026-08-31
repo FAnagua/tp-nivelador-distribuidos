@@ -72,6 +72,7 @@ func run() int {
 		logger.Error("client-run", logger.Fail, "err", err)
 		return 1
 	}
+	logger.Info("client-exit", logger.Success)
 	return 0
 }
 

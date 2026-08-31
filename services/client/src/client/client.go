@@ -2,6 +2,9 @@ package client
 
 import (
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
@@ -32,6 +35,7 @@ type Client struct {
 	csvIter   *CsvIterator
 	csvWriter *CsvWriter
 	protocol  protocol.Protocol
+	alive     bool
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -53,7 +57,18 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{conn: conn, config: config, csvIter: csvIter, csvWriter: csvWriter}
+	client := &Client{conn: conn, config: config,
+		csvIter: csvIter, csvWriter: csvWriter,
+		protocol: protocol.Protocol{}, alive: true}
+
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGTERM)
+	go func() {
+		<-signalChannel
+		logger.Info("received-signal", logger.InProgress)
+		client.Close()
+	}()
+
 	return client, nil
 }
 
@@ -88,12 +103,12 @@ func (client *Client) Run() error {
 
 	client.protocol.SendAgencyId(client.conn, client.config.AgencyId)
 
-	for existRecord {
+	for existRecord && client.alive {
 
 		batch := 0
 		var bets []bet.Bet
 
-		for batch < client.config.BatchSize && existRecord {
+		for batch < client.config.BatchSize && existRecord && client.alive {
 			record := client.csvIter.Record()
 			bet, err := bet.NewBet(client.config.AgencyId, record)
 			if err != nil {
@@ -124,29 +139,41 @@ func (client *Client) Run() error {
 
 	}
 
-	client.protocol.SendCommandResults(client.conn)
+	if client.alive {
+		client.protocol.SendCommandResults(client.conn)
 
-	cmd, err := client.protocol.ReadCommand(client.conn)
-	if err != nil {
-		logger.Warn("read-command", logger.Fail)
-		return err
-	}
-	if cmd == protocol.CMD_SERVER_RESULTS {
-		results, err := client.protocol.ReadResults(client.conn)
-		if err != nil {
-			logger.Warn("read-results", logger.Fail)
+		cmd, err := client.protocol.ReadCommand(client.conn)
+		if err != nil && client.alive {
+			logger.Warn("read-command", logger.Fail)
+
 			return err
 		}
+		if cmd == protocol.CMD_SERVER_RESULTS {
+			results, err := client.protocol.ReadResults(client.conn)
+			if err != nil && client.alive {
+				logger.Warn("read-results", logger.Fail)
+				return err
+			}
 
-		for _, bet := range results {
-			logger.Info("received-result", logger.Success, "bet", bet)
-			client.csvWriter.Write(bet)
+			for _, bet := range results {
+				logger.Info("received-result", logger.Success, "bet", bet)
+				client.csvWriter.Write(bet)
+			}
 		}
+
+		client.protocol.SendCommandFinished(client.conn)
+		logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
 	}
 
-	client.protocol.SendCommandFinished(client.conn)
-	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
-	//time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
+	client.alive = false
 
 	return nil
+}
+
+func (client *Client) Close() {
+	client.alive = false
+
+	if client.conn != nil {
+		client.conn.Close()
+	}
 }
