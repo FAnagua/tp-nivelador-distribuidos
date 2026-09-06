@@ -20,5 +20,14 @@ class Monitor:
         with self.lock:
             self.lottery.store_bets(bets)
 
+    def load_bets_winners(self, agency_id: int) -> list[lottery.Bet]:
+        bets_winning = []
+        with self.lock:
+            bets = self.lottery.load_bets()
+            for bet in bets:
+                if self.lottery.has_won(bet) and bet.agency_id == agency_id:
+                    bets_winning.append(bet)
+        return bets_winning
+
     def close(self):
         self.barrier.abort()

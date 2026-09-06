@@ -1,7 +1,7 @@
 package client
 
 import (
-	"encoding/csv"
+	"bufio"
 	"os"
 	"strconv"
 
@@ -10,7 +10,7 @@ import (
 
 type CsvWriter struct {
 	file   *os.File
-	writer *csv.Writer
+	writer *bufio.Writer
 }
 
 func NewCsvWriter(filePath string) (*CsvWriter, error) {
@@ -19,33 +19,26 @@ func NewCsvWriter(filePath string) (*CsvWriter, error) {
 		return nil, err
 	}
 
-	writer := csv.NewWriter(file)
-
 	return &CsvWriter{
 		file:   file,
-		writer: writer,
+		writer: bufio.NewWriter(file),
 	}, nil
 }
 
 func (w *CsvWriter) Write(bet *bet.Bet) error {
-	record := []string{
-		bet.FirstName,
-		bet.LastName,
-		strconv.Itoa(bet.Document),
-		bet.BirthDate,
-		strconv.Itoa(bet.BetNumber),
-	}
-	err := w.writer.Write(record)
-	if err != nil {
-		return err
-	}
-	w.writer.Flush()
-	return w.writer.Error()
+	record := bet.FirstName + "," +
+		bet.LastName + "," +
+		strconv.Itoa(bet.Document) + "," +
+		bet.BirthDate + "," +
+		strconv.Itoa(bet.BetNumber) + "\n"
+
+	_, err := w.writer.WriteString(record)
+
+	return err
 }
 
 func (w *CsvWriter) Close() error {
-	w.writer.Flush()
-	err := w.writer.Error()
+	err := w.writer.Flush()
 	if err != nil {
 		return err
 	}

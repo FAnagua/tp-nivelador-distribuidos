@@ -4,9 +4,7 @@ import protocol
 import lottery
 import threading
 import lottery_monitor
-
-_ECHO_SERVER_MESSAGE_SIZE = 1024
-
+import signal
 
 class Server:
     def __init__(self, server_host: str, server_port: int, agency_quorum_min: int) -> None:
@@ -20,6 +18,7 @@ class Server:
         self.lottery_monitor = lottery_monitor.Monitor(self.lottery, self.agency_quorum_min)
         self.client_sockets : list[socket.socket] = []
         self.alive = True
+        signal.signal(signal.SIGTERM, self.close)
 
     def _handle_client(self, client_socket):
         action = "handle-client"
@@ -77,25 +76,14 @@ class Server:
                         finish = True
                         continue
                     logger.info("waiting-agencies", logger.LogResult.success, "agency-id", agency_id, "all-agencies-ready", True)
-                    bets = self.lottery.load_bets()
-                    bets_winning = []
-                    for bet in bets:
-                        if not self.alive:
-                            break
-                        if self.lottery.has_won(bet) and bet.agency_id == agency_id:
-                            logger.info(
-                                "bet-winner",
-                                logger.LogResult.success,
-                                "bet",
-                                str(bet),
-                            )
-                            bets_winning.append(bet)
+                    bets_winning = self.lottery_monitor.load_bets_winners(agency_id)
                     self.protocol.sendResults(client_socket, bets_winning)
                         
                 message_amount += 1
         except Exception as e:
             if not self.alive:
                 logger.info("close-thread", logger.LogResult.success, "server-closed", True)
+                finish = True
             else:
                 logger.error(
                     action, logger.LogResult.fail, "messages-amount", message_amount
@@ -142,7 +130,8 @@ class Server:
             logger.info("wait-for-threads", logger.LogResult.success, "thread-id", thread.ident)
         logger.info("wait-for-threads", logger.LogResult.success, "threads-count", len(self.threads))
 
-    def close(self):
+    def close(self, signum, frame):
+        logger.info("signal-received", logger.LogResult.success, "signal", signum)
         self.alive = False
         self.lottery_monitor.close()
         self.server_socket.shutdown(socket.SHUT_RDWR)

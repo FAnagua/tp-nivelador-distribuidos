@@ -1,14 +1,14 @@
 package client
 
 import (
-	"encoding/csv"
-	"io"
+	"bufio"
 	"os"
+	"strings"
 )
 
 type CsvIterator struct {
 	file   *os.File
-	reader *csv.Reader
+	reader *bufio.Scanner
 	record []string
 }
 
@@ -18,26 +18,20 @@ func NewCsvIterator(filePath string) (*CsvIterator, error) {
 		return nil, err
 	}
 
-	reader := csv.NewReader(file)
-
 	return &CsvIterator{
 		file:   file,
-		reader: reader,
+		reader: bufio.NewScanner(file),
 	}, nil
 }
 
 func (it *CsvIterator) Next() bool {
-	record, err := it.reader.Read()
-
-	if err == io.EOF {
+	if !it.reader.Scan() {
 		return false
 	}
 
-	if err != nil {
-		return false
-	}
+	record := it.reader.Text()
 
-	it.record = record
+	it.record = strings.Split(record, ",")
 	return true
 }
 

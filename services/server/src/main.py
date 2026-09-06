@@ -12,14 +12,10 @@ SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
 AGENCY_QUORUM_MIN = int(os.environ["AGENCY_QUORUM_MIN"])
 
-def close_server(s: server.Server, signum, frame):
-    logger.info("signal-received", logger.LogResult.success, "signal", signum)
-    s.close()
-
 def main():
     logger.init()
     s = server.Server(SERVER_HOST, SERVER_PORT, AGENCY_QUORUM_MIN)
-    signal.signal(signal.SIGTERM, partial(close_server, s))
+    #signal.signal(signal.SIGTERM, partial(close_server, s))
     try:
         s.run()
     except Exception as e:
